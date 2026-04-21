@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcGIS Urban Style - Dark Tech Digital Twin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-deep: #050b14;
+            --panel-bg: rgba(13, 25, 41, 0.9);
+            --accent-blue: #00f2ff;
+            --accent-green: #39ff14;
+            --accent-purple: #bc13fe;
+            --accent-orange: #ff9d00;
+            --text-glow: 0 0 10px rgba(0, 242, 255, 0.5);
+            --border-glow: 1px solid rgba(0, 242, 255, 0.2);
+        }
+        body {
+            background-color: var(--bg-deep);
+            color: #e0e6ed;
+            overflow: hidden;
+            font-family: "Inter", "Avenir Next", sans-serif;
+            user-select: none;
+        }
+        
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 280px; right: 350px; bottom: 0;
+            z-index: 1;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #102035 0%, #050b14 100%);
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(15px);
+            border: var(--border-glow);
+            z-index: 10;
+        }
+
+        .summary-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(0, 242, 255, 0.3);
+            border-radius: 4px;
+            padding: 10px 30px;
+            display: flex;
+            gap: 40px;
+            z-index: 20;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        .summary-item { text-align: center; }
+        .summary-label { font-size: 9px; color: #8899a6; text-transform: uppercase; letter-spacing: 1px; }
+        .summary-value { font-size: 16px; font-weight: 800; color: var(--accent-blue); font-family: monospace; }
+
+        svg { width: 100%; height: 100%; display: block; touch-action: none; }
+        .grid-line { stroke: rgba(0, 242, 255, 0.08); stroke-width: 0.5; }
+        .grid-line-major { stroke: rgba(0, 242, 255, 0.15); stroke-width: 1; }
+
+        .glow-text { text-shadow: var(--text-glow); }
+        
+        .metric-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        .metric-value { font-size: 1.4rem; font-weight: 800; font-family: 'Courier New', Courier, monospace; line-height: 1; }
+        .metric-label { font-size: 0.65rem; font-weight: 600; color: #8899a6; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+        
+        ::-webkit-scrollbar { width: 2px; }
+        ::-webkit-scrollbar-thumb { background: var(--accent-blue); }
+    </style>
+</head>
+<body class="cursor-crosshair">
+
+    <!-- Global Summary Bar -->
+    <div class="summary-bar">
+        <div class="summary-item">
+            <div class="summary-label">City Core Score</div>
+            <div id="sum-score" class="summary-value glow-text">0.0</div>
+        </div>
+        <div class="summary-item border-l border-white/10 pl-10">
+            <div class="summary-label">Total Assets</div>
+            <div id="sum-assets" class="summary-value">0</div>
+        </div>
+        <div class="summary-item border-l border-white/10 pl-10">
+            <div class="summary-label">Development Ratio</div>
+            <div id="sum-ratio" class="summary-value">0%</div>
+        </div>
+    </div>
+
+    <!-- Left Sidebar -->
+    <div class="fixed left-0 top-0 bottom-0 w-[280px] panel flex flex-col p-4">
+        <div class="flex items-center gap-3 mb-8 border-b border-white/10 pb-4">
+            <div class="w-8 h-8 bg-cyan-500 rounded flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                <i class="fa-solid fa-microchip text-black"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-black tracking-tighter uppercase glow-text">Urban Core AI</h1>
+                <p class="text-[9px] text-cyan-500 font-bold tracking-[0.2em]">DIGITAL TWIN V4.0</p>
+            </div>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto space-y-6">
+            <section>
+                <h2 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Simulation Scenarios</h2>
+                <div class="space-y-2">
+                    <div class="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded text-xs flex items-center justify-between cursor-pointer">
+                        <span class="text-cyan-400">2035 Carbon Neutral</span>
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Asset Palette</h2>
+                <div id="palette" class="grid grid-cols-2 gap-2"></div>
+            </section>
+
+            <section class="bg-black/40 p-3 rounded-lg border border-white/5">
+                <h2 class="text-[10px] font-bold text-cyan-500 uppercase tracking-widest mb-2">Controls</h2>
+                <div class="text-[11px] space-y-2 text-gray-400">
+                    <p><i class="fa-solid fa-hand-pointer mr-2 text-white"></i>DRAG TO MOVE</p>
+                    <p><i class="fa-solid fa-camera mr-2 text-white"></i>ORBIT VIEW</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Main Map View -->
+    <div id="canvas-container">
+        <svg id="svg-scene" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <filter id="glow">
+                    <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                    <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+            </defs>
+            <g id="grid-layer"></g>
+            <g id="buildings-layer" filter="url(#glow)"></g>
+        </svg>
+    </div>
+
+    <!-- Right Dashboard -->
+    <div class="fixed right-0 top-0 bottom-0 w-[350px] panel flex flex-col">
+        <div class="p-4 border-b border-white/10 bg-white/5">
+            <h2 class="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                <i class="fa-solid fa-dna text-cyan-400"></i> Performance DNA
+            </h2>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-5 space-y-2">
+            <!-- Economic -->
+            <div class="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-2 mt-2">Economic Capacity</div>
+            <div class="grid grid-cols-2 gap-2">
+                <div class="metric-card">
+                    <div class="metric-label">Job Density</div>
+                    <div id="val-jobs" class="metric-value text-purple-400">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">GDP Growth</div>
+                    <div id="val-gdp" class="metric-value text-purple-400">0%</div>
+                </div>
+            </div>
+
+            <!-- Environmental -->
+            <div class="text-[9px] font-bold text-green-400 uppercase tracking-widest mb-2 mt-4">Ecological Balance</div>
+            <div class="grid grid-cols-2 gap-2">
+                <div class="metric-card">
+                    <div class="metric-label">Net Carbon</div>
+                    <div id="val-carbon" class="metric-value text-green-400">0.0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Green Index</div>
+                    <div id="val-green" class="metric-value text-green-400">0%</div>
+                </div>
+            </div>
+
+            <!-- Social -->
+            <div class="text-[9px] font-bold text-orange-400 uppercase tracking-widest mb-2 mt-4">Social Cohesion</div>
+            <div class="metric-card">
+                <div class="metric-label">Housing Capacity</div>
+                <div class="flex items-baseline justify-between">
+                    <div id="val-pop" class="metric-value text-orange-400">0</div>
+                    <span class="text-[9px] text-gray-600">UNITS</span>
+                </div>
+            </div>
+
+            <!-- Space Use Summary -->
+            <div class="border-t border-white/5 pt-4 mt-6">
+                <div class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4">Land Use Distribution</div>
+                <div id="space-chart" class="w-full h-1 bg-white/5 flex mb-4"></div>
+                <div id="space-legend" class="grid grid-cols-2 gap-y-2 text-[10px]"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const types = {
+            'Residence': { color: '#00f2ff', pop: 6.5, job: 0.1, carbon: 1.2, gdp: 0.2 },
+            'Business': { color: '#bc13fe', pop: 0.2, job: 8.4, carbon: 3.5, gdp: 5.8 },
+            'Industry': { color: '#ff9d00', pop: 0, job: 12.0, carbon: 9.8, gdp: 7.2 },
+            'Ecology': { color: '#39ff14', pop: 0.1, job: 0.2, carbon: -8.0, gdp: 0.5 },
+            'Service': { color: '#ff0055', pop: 1.2, job: 4.5, carbon: 2.1, gdp: 2.4 }
+        };
+
+        let angleX = 55 * (Math.PI / 180);
+        let angleZ = -30 * (Math.PI / 180);
+        let zoom = 1.2;
+        let buildings = [];
+        let dragTarget = null;
+        let isOrbiting = false;
+        let dOffset = { x: 0, y: 0 };
+
+        const svg = document.getElementById('svg-scene');
+        const bLayer = document.getElementById('buildings-layer');
+        const gLayer = document.getElementById('grid-layer');
+
+        function project(x, y, z) {
+            let x1 = x * Math.cos(angleZ) - y * Math.sin(angleZ);
+            let y1 = x * Math.sin(angleZ) + y * Math.cos(angleZ);
+            let y2 = y1 * Math.cos(angleX) - z * Math.sin(angleX);
+            let z2 = y1 * Math.sin(angleX) + z * Math.cos(angleX);
+            return { x: 500 + x1 * zoom, y: 500 + y2 * zoom, zDepth: z2 };
+        }
+
+        function unproject(sx, sy) {
+            const tx = (sx - 500) / zoom;
+            const ty = (sy - 500) / zoom;
+            const y1 = ty / Math.cos(angleX);
+            const x = tx * Math.cos(angleZ) + y1 * Math.sin(angleZ);
+            const y = y1 * Math.cos(angleZ) - tx * Math.sin(angleZ);
+            return { x, y };
+        }
+
+        function render() {
+            bLayer.innerHTML = ''; gLayer.innerHTML = '';
+            const r = 600; const s = 40;
+            for(let i = -r; i <= r; i += s) {
+                [[i,-r,i,r], [-r,i,r,i]].forEach(c => {
+                    const p1=project(c[0],c[1],0), p2=project(c[2],c[3],0);
+                    const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    l.setAttribute("x1", p1.x); l.setAttribute("y1", p1.y);
+                    l.setAttribute("x2", p2.x); l.setAttribute("y2", p2.y);
+                    l.className.baseVal = i === 0 ? "grid-line-major" : "grid-line";
+                    gLayer.appendChild(l);
+                });
+            }
+
+            let faces = [];
+            buildings.forEach((b, idx) => {
+                const { x, y, w, d, h, type } = b;
+                const active = dragTarget === b;
+                const v = [
+                    project(x,y,0), project(x+w,y,0), project(x+w,y+d,0), project(x,y+d,0),
+                    project(x,y,h), project(x+w,y,h), project(x+w,y+d,h), project(x,y+d,h)
+                ];
+                const cfg = [{i:[4,5,6,7],b:1.2},{i:[0,1,5,4],b:0.6},{i:[1,2,6,5],b:0.8},{i:[2,3,7,6],b:1.0},{i:[3,0,4,7],b:0.7},{i:[0,3,2,1],b:0.3}];
+                cfg.forEach(f => {
+                    const pts = f.i.map(i => v[i]);
+                    faces.push({ 
+                        p: pts.map(p => `${p.x},${p.y}`).join(' '), 
+                        z: pts.reduce((a,b)=>a+b.zDepth,0)/4,
+                        c: types[type].color, br: f.b, active, idx
+                    });
+                });
+            });
+
+            faces.sort((a,b)=>a.z-b.z).forEach(f => {
+                const p = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                p.setAttribute("points", f.p);
+                p.setAttribute("fill", f.c);
+                p.setAttribute("stroke", f.active ? "#fff" : "rgba(255,255,255,0.05)");
+                p.style.filter = `brightness(${f.br})`;
+                p.onmousedown = (e) => {
+                    e.stopPropagation();
+                    const rect = svg.getBoundingClientRect();
+                    const m = unproject(e.clientX-rect.left, e.clientY-rect.top);
+                    dragTarget = buildings[idx = f.idx];
+                    dOffset = { x: m.x-dragTarget.x, y: m.y-dragTarget.y };
+                    render();
+                };
+                bLayer.appendChild(p);
+            });
+        }
+
+        function updateMetrics() {
+            let p=0, j=0, c=0, g=0, eco=0, totalV=0;
+            const landUse = {};
+            buildings.forEach(b => {
+                const t = types[b.type];
+                const vol = (b.w * b.d * b.h) / 1000;
+                const d = Math.sqrt(b.x*b.x + b.y*b.y);
+                const mult = Math.max(0.4, 2.0 - d/400);
+
+                p += vol * t.pop * mult;
+                j += vol * t.job * mult;
+                c += vol * t.carbon * (1.5 - mult/2);
+                g += vol * t.gdp * mult;
+                if(b.type === 'Ecology') eco += vol;
+                totalV += vol;
+                landUse[b.type] = (landUse[b.type] || 0) + vol;
+            });
+
+            // Update Metrics Dashboard
+            document.getElementById('val-pop').innerText = Math.round(p).toLocaleString();
+            document.getElementById('val-jobs').innerText = Math.round(j).toLocaleString();
+            document.getElementById('val-gdp').innerText = `${Math.round(g/10)}%`;
+            document.getElementById('val-carbon').innerText = (c/100).toFixed(1);
+            document.getElementById('val-green').innerText = `${Math.round(eco/totalV*100 || 0)}%`;
+
+            // Update Summary Bar
+            const cityScore = ( (j/1000) + (p/5000) + (eco/totalV*10) - (c/5000) ).toFixed(1);
+            document.getElementById('sum-score').innerText = cityScore;
+            document.getElementById('sum-assets').innerText = buildings.length;
+            document.getElementById('sum-ratio').innerText = `${Math.min(100, Math.round(totalV/50))}%`;
+
+            // Update Space Utilization Chart
+            const chart = document.getElementById('space-chart');
+            const legend = document.getElementById('space-legend');
+            chart.innerHTML = ''; legend.innerHTML = '';
+            Object.entries(types).forEach(([n, d]) => {
+                const v = landUse[n] || 0;
+                const perc = (v / totalV * 100) || 0;
+                if(v > 0) {
+                    const segment = document.createElement('div');
+                    segment.style.width = perc + '%';
+                    segment.style.backgroundColor = d.color;
+                    chart.appendChild(segment);
+                }
+                const lItem = document.createElement('div');
+                lItem.className = "flex items-center gap-2";
+                lItem.innerHTML = `<div class="w-1.5 h-1.5" style="background:${d.color}"></div><span class="text-gray-500 uppercase">${n}</span> <span class="text-white font-mono">${Math.round(perc)}%</span>`;
+                legend.appendChild(lItem);
+            });
+        }
+
+        function spawn(type, count=1) {
+            for(let i=0; i<count; i++) {
+                buildings.push({
+                    x: (Math.random()-0.5)*550, y: (Math.random()-0.5)*550,
+                    w: 15+Math.random()*25, d: 15+Math.random()*25,
+                    h: 5+Math.random()*35,
+                    type: type
+                });
+            }
+            render(); updateMetrics();
+        }
+
+        let lx, ly;
+        svg.onmousedown = () => { isOrbiting = true; lx=event.clientX; ly=event.clientY; };
+        window.onmousemove = (e) => {
+            const rect = svg.getBoundingClientRect();
+            if(dragTarget) {
+                const g = unproject(e.clientX-rect.left, e.clientY-rect.top);
+                dragTarget.x = g.x - dOffset.x; dragTarget.y = g.y - dOffset.y;
+                render(); updateMetrics();
+            } else if(isOrbiting) {
+                angleZ += (e.clientX-lx)*0.005; angleX = Math.max(0.2, Math.min(1.4, angleX-(e.clientY-ly)*0.005));
+                lx=e.clientX; ly=e.clientY; render();
+            }
+        };
+        window.onmouseup = () => { isOrbiting = false; dragTarget = null; render(); };
+        svg.onwheel = (e) => { zoom = Math.max(0.4, Math.min(4, zoom-e.deltaY*0.001)); render(); e.preventDefault(); };
+
+        window.onload = () => {
+            const p = document.getElementById('palette');
+            Object.entries(types).forEach(([n, d]) => {
+                const el = document.createElement('div');
+                el.className = 'bg-white/5 p-2 rounded border border-white/10 hover:border-cyan-500 cursor-pointer transition-all';
+                el.innerHTML = `<div class="w-full h-1 mb-2" style="background:${d.color}"></div><div class="text-[9px] uppercase font-bold text-center">${n}</div>`;
+                el.onclick = () => spawn(n, 1);
+                p.appendChild(el);
+            });
+            Object.keys(types).forEach(t => spawn(t, 8)); 
+        };
+    </script>
+</body>
+</html>
